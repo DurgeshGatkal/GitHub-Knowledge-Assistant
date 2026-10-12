@@ -1,0 +1,29 @@
+{
+  "name": "@repo/analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "dev:extract": "tsx src/cli/extractImports.ts"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.22.6",
+    "tree-sitter-javascript": "^0.21.4",
+    "tree-sitter-typescript": "^0.21.2",
+    "graphology": "^0.25.4",
+    "graphology-types": "^0.24.7",
+    "tar": "^7.4.0",
+    "node-fetch": "^3.3.2",
+    "typescript": "^5.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/tar": "^6.1.13",
+    "tsx": "^4.9.3",
+    "vitest": "^1.6.0"
+  }
+}

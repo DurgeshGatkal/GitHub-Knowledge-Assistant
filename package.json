@@ -1,0 +1,21 @@
+{
+  "name": "github-intelligence-extension",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:analyzer": "vitest run --project packages/analyzer"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "@nicolo-ribaudo/chokidar-2": "^2.1.8-no-fsevents.3"
+  }
+}
