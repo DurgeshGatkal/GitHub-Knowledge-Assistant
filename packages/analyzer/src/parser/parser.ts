@@ -37,14 +37,31 @@ export interface ImportRecord {
 
 let jsParser: Parser | null = null;
 let tsParser: Parser | null = null;
+// Track whether WASM has been initialised — TreeSitter.init() must only be called once.
+let wasmInitialised = false;
 
 /**
- * Initialises the Tree-sitter parsers.
+ * Initialises the Tree-sitter parsers (idempotent — safe to call multiple times).
  * Must be called once before using extractImports().
+ *
+ * WHY the guard?
+ *   web-tree-sitter's Parser.init() loads the WASM module. Calling it a second
+ *   time throws because the WASM instance is already live. In tests, multiple
+ *   test suites all call initParser() — the guard prevents the second call from
+ *   throwing "TreeSitter.init is not a function" (which happens because the
+ *   Parser export shape changes after the first successful init()).
  */
 export async function initParser(): Promise<void> {
+  // Fast path — already fully initialised
+  if (jsParser !== null && tsParser !== null) return;
+
   const TreeSitter = (Parser as any).default || Parser;
-  await TreeSitter.init();
+
+  // Only call .init() once — WASM cannot be re-initialised
+  if (!wasmInitialised) {
+    await TreeSitter.init();
+    wasmInitialised = true;
+  }
 
   const Language = TreeSitter.Language || (Parser as any).Language;
 
