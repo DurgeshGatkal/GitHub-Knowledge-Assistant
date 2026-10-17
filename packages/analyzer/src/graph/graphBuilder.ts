@@ -28,7 +28,7 @@
  *   6. Returns a plain GraphAnalysis (JSON-serialisable) for the API / CLI
  */
 
-import DirectedGraph from 'graphology';
+import { DirectedGraph } from 'graphology';
 import type { NodeAttributes, EdgeAttributes, UnresolvedImport, GraphAnalysis } from './types.js';
 import type { FileEntry } from '../fetcher/fileFilter.js';
 import type { ResolvedImport } from '../resolver/resolver.js';
@@ -170,12 +170,12 @@ export function buildGraph(input: BuildGraphInput): GraphAnalysis {
   //   - Tests are simpler to write against plain data than graph methods.
   //   - The Days 7–8 BFS (reverse search) can easily reconstruct a graphology
   //     instance from these arrays if needed.
-  const nodes = graph.nodes().map((id) => ({
+  const nodes = graph.nodes().map((id: string) => ({
     id,
     attributes: graph.getNodeAttributes(id),
   }));
 
-  const edges = graph.edges().map((edgeKey) => ({
+  const edges = graph.edges().map((edgeKey: string) => ({
     source: graph.source(edgeKey),
     target: graph.target(edgeKey),
     attributes: graph.getEdgeAttributes(edgeKey),
