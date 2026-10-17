@@ -43,7 +43,7 @@ github-knowledge-assistant/
 
 ---
 
-## 🚀 Key Features Built So Far (Milestone 1, Days 1–3)
+## 🚀 Key Features Built So Far (Days 1–8)
 
 ### 1. GitHub Tarball Streaming Fetcher
 - Downloads repository snapshots by exact commit SHA in a single HTTP stream.
@@ -64,29 +64,43 @@ github-knowledge-assistant/
   - **CommonJS Requires:** `require('./module')`
 - Captures accurate 1-based line numbers directly from the AST.
 
+### 4. TypeScript Import Resolver
+- Resolves raw specifiers to real files with the TypeScript Compiler API (`resolveModuleName`) instead of hand-written path rules.
+- Handles relative paths, `tsconfig.json` `paths` aliases (`@/utils/helpers`), `baseUrl`, and barrel `index.ts` files.
+- Maps `.js` specifiers to their real `.ts` files (the Node16 ESM convention).
+- Records how each import was resolved (`relative` / `alias` / `index` / `baseUrl` / `nodeModule`) and keeps everything it cannot resolve as `unresolved` — never dropped.
+
+### 5. graphology Dependency Graph
+- Builds a directed graph: each file is a node, each resolved import is an edge (`source → target` means "source imports target").
+- Every edge stores its evidence: `from`, `to`, `importLine`, `specifier`, `kind` (static / dynamic / re-export / require) and `resolutionMethod`.
+- External packages (`react`, `lodash`, …) are skipped; circular imports are stored safely.
+- The result is plain JSON (`nodes`, `edges`, `unresolvedImports`, `stats`), ready for the API and the extension UI.
+
+### 6. Reverse Impact Analysis (Confirmed / Inferred / Unverified)
+- Walks the graph **backwards** from the changed files ("who imports me? who imports them?") with a depth limit (default 3) and a visited set for cycle safety.
+- Labels every affected file: **Confirmed** (a real import path exists) or **Unverified** (only reachable beyond the depth limit, or an unresolved link in a relevant file).
+- Every finding carries its **evidence chain** — the file and line of each import leading to it.
+- Suggests relevant tests: tests that **import affected code** (Confirmed) and sibling tests matched by name proximity (Inferred).
+
 ---
 
 ## 🧪 Testing & Verification
 
 The core engine is backed by automated tests and verified against real GitHub repositories.
 
-### Automated Unit Tests (24/24 Passing)
+### Automated Unit Tests (63/63 Passing)
 ```bash
 npx vitest run
 ```
 ```
-Test Files  2 passed (2)
-     Tests  24 passed (24)
+Test Files  5 passed (5)
+     Tests  63 passed (63)
 
-✓ test/fileFilter.test.ts (18 tests)
-  - Inclusion rules for all JS/TS extensions
-  - Rejection rules for node_modules, build dirs, lockfiles, and minified bundles
-  - File size threshold enforcement (> 2MB skipped)
-
-✓ test/parser.test.ts (6 tests)
-  - Static import extraction with line accuracy
-  - Re-export and CommonJS require extraction
-  - Dynamic import extraction
+✓ test/fileFilter.test.ts      (18 tests)  Source inclusion / rejection rules
+✓ test/parser.test.ts          ( 6 tests)  Import extraction with line accuracy
+✓ test/resolver.test.ts        (11 tests)  Aliases, barrels, .js → .ts, unresolved
+✓ test/graphBuilder.test.ts    (14 tests)  Nodes, edges, multi-edges, cycles
+✓ test/impactAnalysis.test.ts  (14 tests)  Reverse search, labels, evidence, tests
 ```
 
 ### Live CLI Demonstration
@@ -133,16 +147,36 @@ Analysis Summary:
 Status: SUCCESS (Days 1-3 criteria verified)
 ```
 
+### Live Change-Impact CLI (Days 7–8)
+Ask what a change touches, straight from the terminal:
+
+```bash
+npx tsx packages/analyzer/src/cli/analyzeImpact.ts --local fixtures/fixture-simple --changed src/config.ts
+```
+
+```text
+AFFECTED FILES (3):
+  src/price.ts         depth 1  confirmed   (price.ts imports ./config, line 6)
+  src/index.ts         depth 2  confirmed   (index.ts imports ./price, line 6)
+  src/price.test.ts    depth 3  confirmed   (price.test.ts imports ./index, line 4)
+
+RELEVANT TESTS (2):
+  src/price.test.ts    confirmed   imports-affected-code
+  src/config.test.ts   inferred    name-proximity
+
+Status: SUCCESS (Days 7–8 criteria verified)
+```
+
 ---
 
 ## 🗺️ 14-Day Roadmap
 
 - [x] **Days 1–3: Core Extraction Engine**  
   GitHub tarball fetcher, archive streaming, file filter, Tree-sitter WASM import extractor, and CLI verification.
-- [ ] **Days 4–6: Resolution & Dependency Graph**  
+- [x] **Days 4–6: Resolution & Dependency Graph**  
   TypeScript Compiler API (`resolveModuleName`), `tsconfig.json` path mapping & alias resolution, `graphology` directed graph, and cycle guards.
-- [ ] **Days 7–8: Impact Analysis & Finding Classification**  
-  Reverse BFS traversal from changed files, depth limits, evidence chains, and finding classifications (*Confirmed*, *Inferred*, *Unverified*).
+- [x] **Days 7–8: Impact Analysis & Finding Classification**
+  Reverse BFS traversal from changed files, depth limits, evidence chains, finding classifications (*Confirmed*, *Inferred*, *Unverified*), and test matching.
 - [ ] **Days 9–10: API Server & Exploration UI**  
   Fastify API, SQLite cache `(repo, sha)`, job queue, and Chrome Extension Manifest V3 with React Flow interactive graph.
 - [ ] **Days 11–12: Pull Request Side Panel**  
