@@ -28,10 +28,24 @@
  *   6. Returns a plain GraphAnalysis (JSON-serialisable) for the API / CLI
  */
 
-import { DirectedGraph } from 'graphology';
 import type { NodeAttributes, EdgeAttributes, UnresolvedImport, GraphAnalysis } from './types.js';
 import type { FileEntry } from '../fetcher/fileFilter.js';
 import type { ResolvedImport } from '../resolver/resolver.js';
+
+/**
+ * graphology is published with both CJS and ESM builds. tsx/Node ESM resolution
+ * can fail to surface its named exports (`DirectedGraph`). We load it via
+ * createRequire (CJS path) where `module.exports = Graph` and
+ * `Graph.DirectedGraph = DirectedGraph` are both present.
+ */
+let DirectedGraph: any;
+
+{
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const mod = require('graphology');
+  DirectedGraph = mod.DirectedGraph ?? mod;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -69,7 +83,7 @@ export function buildGraph(input: BuildGraphInput): GraphAnalysis {
   // Use graphology's DirectedGraph with our typed attributes.
   // MultiDirectedGraph would allow parallel edges but DirectedGraph is simpler
   // and sufficient: we generate unique edge IDs ourselves for multi-edges.
-  const graph = new DirectedGraph<NodeAttributes, EdgeAttributes>();
+  const graph = new DirectedGraph() as any;
 
   const unresolvedImports: UnresolvedImport[] = [];
   let externalSkipped = 0;
