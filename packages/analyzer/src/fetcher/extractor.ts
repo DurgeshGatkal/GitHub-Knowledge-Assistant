@@ -14,11 +14,17 @@ import path from 'node:path';
 import * as tar from 'tar';
 import { shouldAnalyzeFile, type FileEntry } from './fileFilter.js';
 
+// Repo-level limits to prevent abuse on the public website.
+// These can be tuned via environment variables at deployment.
+const MAX_REPO_TARBALL_BYTES = Number(process.env.MAX_REPO_TARBALL_BYTES ?? '100 * 1024 * 1024'); // 100 MB
+const MAX_ANALYZED_FILES = Number(process.env.MAX_ANALYZED_FILES ?? '5000');
+
 export interface ExtractResult {
   extractDir: string;         // directory containing the extracted source files
   files: FileEntry[];         // list of files that passed the filter
   totalFilesFound: number;    // total files in the tarball (before filtering)
   skippedCount: number;       // how many files were filtered out
+  truncated?: boolean;        // true if file limit was hit
 }
 
 /**
@@ -32,6 +38,15 @@ export async function extractTarball(
   const files: FileEntry[] = [];
   let totalFilesFound = 0;
   let skippedCount = 0;
+  let truncated = false;
+
+  // Check tarball size before processing
+  const stat = statSync(tarballPath);
+  if (stat.size > MAX_REPO_TARBALL_BYTES) {
+    throw new Error(
+      `Repository tarball too large: ${stat.size} bytes (max ${MAX_REPO_TARBALL_BYTES})`
+    );
+  }
 
   // We collect entries first, then process them
   await tar.t({
@@ -41,6 +56,13 @@ export async function extractTarball(
       if (entry.type !== 'File') return;
 
       totalFilesFound++;
+
+      // Stop accepting new files once we hit the analyzed file limit
+      if (files.length >= MAX_ANALYZED_FILES) {
+        truncated = true;
+        return;
+      }
+
       const rawPath = entry.path;
       const sizeBytes = entry.size ?? 0;
 
@@ -79,7 +101,7 @@ export async function extractTarball(
     file.absolutePath = path.join(extractDir, file.relativePath);
   }
 
-  return { extractDir, files, totalFilesFound, skippedCount };
+  return { extractDir, files, totalFilesFound, skippedCount, truncated };
 }
 
 /**
