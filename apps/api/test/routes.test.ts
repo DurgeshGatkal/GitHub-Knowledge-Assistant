@@ -11,6 +11,8 @@ import { analyzeRoutes } from '../src/routes/analyze.js';
 import type { GraphAnalysis } from '@repo/analyzer';
 import type { AnalyzeDeps } from '../src/routes/analyze.js';
 
+const VALID_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
 function makeGraph(sha: string): GraphAnalysis {
   return {
     owner: 'o',
@@ -36,61 +38,61 @@ function buildApp(deps: AnalyzeDeps) {
 }
 
 describe('POST /api/analyze', () => {
-  it('returns 400 when owner or repo is missing', async () => {
+  it('returns 400 when url is missing', async () => {
     const app = buildApp({
       enqueue: () => ({ id: 'j1', status: 'queued' }),
       tick: async () => {},
-      analyzeJob: async () => makeGraph('x'),
+      analyzeJob: async () => makeGraph(VALID_SHA),
       cacheGet: async () => null,
-      repoExists: async () => true,
-      resolveRefToSha: async () => 'abc',
+      resolveRef: async () => ({ sha: VALID_SHA, ref: VALID_SHA, fromSha: true }),
     });
     const res = await app.inject({
       method: 'POST',
       url: '/analyze',
-      body: { owner: '', repo: 'r' },
+      body: { url: '' },
     });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
 
-  it('returns 404 when the repo does not exist', async () => {
+  it('returns 400 for an invalid GitHub URL', async () => {
     const app = buildApp({
       enqueue: () => ({ id: 'j1', status: 'queued' }),
       tick: async () => {},
-      analyzeJob: async () => makeGraph('x'),
+      analyzeJob: async () => makeGraph(VALID_SHA),
       cacheGet: async () => null,
-      repoExists: async () => false,
-      resolveRefToSha: async () => null,
+      resolveRef: async () => ({ sha: VALID_SHA, ref: VALID_SHA, fromSha: true }),
     });
     const res = await app.inject({
       method: 'POST',
       url: '/analyze',
-      body: { owner: 'nope', repo: 'repo' },
+      body: { url: 'https://gitlab.com/owner/repo' },
     });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('UNSUPPORTED_HOST');
     await app.close();
   });
 
   it('returns the cached graph immediately on a cache hit', async () => {
-    const graph = makeGraph('cached-sha');
+    const graph = makeGraph(VALID_SHA);
     const app = buildApp({
       enqueue: () => ({ id: 'j1', status: 'queued' }),
       tick: async () => {},
-      analyzeJob: async () => makeGraph('x'),
+      analyzeJob: async () => makeGraph(VALID_SHA),
       cacheGet: async () => graph,
-      repoExists: async () => true,
-      resolveRefToSha: async () => 'cached-sha',
+      resolveRef: async () => ({ sha: VALID_SHA, ref: VALID_SHA, fromSha: true }),
     });
     const res = await app.inject({
       method: 'POST',
       url: '/analyze',
-      body: { owner: 'o', repo: 'r', ref: 'cached-sha' },
+      body: { url: `https://github.com/o/r/commit/${VALID_SHA}` },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json() as { status: string; result: GraphAnalysis };
+    const body = res.json() as { status: string; result: GraphAnalysis; cached: boolean };
     expect(body.status).toBe('done');
-    expect(body.result.sha).toBe('cached-sha');
+    expect(body.cached).toBe(true);
+    expect(body.result.sha).toBe(VALID_SHA);
     await app.close();
   });
 
@@ -105,46 +107,84 @@ describe('POST /api/analyze', () => {
       tick: async () => {
         ticked = true;
       },
-      analyzeJob: async () => makeGraph('new-sha'),
+      analyzeJob: async () => makeGraph(VALID_SHA),
       cacheGet: async () => null,
-      repoExists: async () => true,
-      resolveRefToSha: async () => 'new-sha',
+      resolveRef: async () => ({ sha: VALID_SHA, ref: 'main', fromSha: false }),
     });
     const res = await app.inject({
       method: 'POST',
       url: '/analyze',
-      body: { owner: 'o', repo: 'r', ref: 'main' },
+      body: { url: 'https://github.com/o/r' },
     });
     expect(res.statusCode).toBe(202);
-    const body = res.json() as { status: string; jobId: string };
+    const body = res.json() as { status: string; jobId: string; cached: boolean };
     expect(body.status).toBe('queued');
+    expect(body.cached).toBe(false);
     expect(body.jobId).toBe('job-123');
-    expect(enqueued).toEqual({ owner: 'o', repo: 'r', sha: 'new-sha' });
+    expect(enqueued).toEqual({ owner: 'o', repo: 'r', sha: VALID_SHA });
     expect(ticked).toBe(true);
     await app.close();
   });
 
-  it('resolves a 40-hex SHA ref without calling resolveRefToSha', async () => {
-    let resolved: string | null = null;
+  it('resolves a commit SHA from URL without calling resolveRef', async () => {
+    let resolveCalled = false;
     const app = buildApp({
       enqueue: (owner, repo, sha) => ({ id: 'j', status: 'queued' }),
       tick: async () => {},
       analyzeJob: async () => makeGraph(sha),
       cacheGet: async () => null,
-      repoExists: async () => true,
-      resolveRefToSha: async (o, r, ref) => {
-        resolved = ref;
-        return ref;
+      resolveRef: async () => {
+        resolveCalled = true;
+        return { sha: 'resolved', ref: 'resolved', fromSha: false };
       },
     });
-    const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const res = await app.inject({
       method: 'POST',
       url: '/analyze',
-      body: { owner: 'o', repo: 'r', ref: sha },
+      body: { url: `https://github.com/o/r/commit/${VALID_SHA}` },
     });
     expect(res.statusCode).toBe(202);
-    expect(resolved).toBe(sha);
+    expect(resolveCalled).toBe(false); // full SHA → no network call
+    await app.close();
+  });
+
+  it('returns 404 when ref resolver fails', async () => {
+    const app = buildApp({
+      enqueue: () => ({ id: 'j1', status: 'queued' }),
+      tick: async () => {},
+      analyzeJob: async () => makeGraph(VALID_SHA),
+      cacheGet: async () => null,
+      resolveRef: async () => ({
+        code: 'REPO_NOT_FOUND',
+        message: 'Repository not found or private.',
+      }),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/analyze',
+      body: { url: 'https://github.com/nope/repo' },
+    });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('returns 429 when GitHub is rate limited', async () => {
+    const app = buildApp({
+      enqueue: () => ({ id: 'j1', status: 'queued' }),
+      tick: async () => {},
+      analyzeJob: async () => makeGraph(VALID_SHA),
+      cacheGet: async () => null,
+      resolveRef: async () => ({
+        code: 'GITHUB_RATE_LIMITED',
+        message: 'GitHub API rate limit exceeded.',
+      }),
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/analyze',
+      body: { url: 'https://github.com/o/r' },
+    });
+    expect(res.statusCode).toBe(429);
     await app.close();
   });
 });

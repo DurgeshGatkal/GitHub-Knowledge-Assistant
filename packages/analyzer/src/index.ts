@@ -36,3 +36,21 @@ export {
 } from './impact/reverseSearch.js';
 export { classifyFindings } from './impact/classifyFindings.js';
 export { matchTests, isTestFile } from './impact/testMatching.js';
+
+// GitHub URL parsing and ref resolution (website / API integration)
+export {
+  parseGithubUrl,
+  resolveRef,
+  type ParsedGithubUrl,
+  type ParsedRepoUrl,
+  type ParsedPullUrl,
+  type ParsedCommitUrl,
+  type UrlError,
+  type UrlErrorCode,
+  type ParseResult,
+  type RefResolverDeps,
+  type ResolveRefResult,
+  type RefError,
+  type RefErrorCode,
+  type ResolveRefResultOrError,
+} from './github/index.js';

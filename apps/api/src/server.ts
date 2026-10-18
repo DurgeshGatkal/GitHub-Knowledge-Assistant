@@ -20,7 +20,7 @@ import { SqliteGraphCache } from './cache/graphCache.js';
 import { createJobQueue } from './jobs/queue.js';
 import { createAnalysisJobHandler } from './jobs/analysisJob.js';
 import { analyzeRemote } from '@repo/analyzer';
-import { resolveRefToSha, repoExists } from './services/github.js';
+import { resolveRef } from '@repo/analyzer';
 
 export function buildServer(config: Config) {
   const fastify = Fastify({
@@ -67,9 +67,11 @@ export function buildServer(config: Config) {
     analyzeJob,
     cacheGet: (owner: string, repo: string, sha: string) =>
       cache.get(owner, repo, sha),
-    repoExists: (owner: string, repo: string) => repoExists({ owner, repo }),
-    resolveRefToSha: (owner: string, repo: string, ref: string) =>
-      resolveRefToSha({ owner, repo, ref }),
+    resolveRef: (owner: string, repo: string, ref: string | undefined) =>
+      resolveRef(owner, repo, ref, {
+        fetch,
+        githubToken: config.githubToken,
+      }),
   };
   const jobsDeps = { get: (id: string) => queue.get(id) };
   const graphDeps = {
