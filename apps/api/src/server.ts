@@ -31,11 +31,19 @@ export function buildServer(config: Config) {
   });
 
   // ── CORS ──────────────────────────────────────────────────────────────────
-  // Only the extension (and localhost dev) may call this API.
+  // Allow the website dev server and production origin.
   void fastify.register(cors, {
-    origin: config.corsOrigin,
+    origin: (origin, cb) => {
+      const allowed = [config.corsOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173'];
+      if (!origin || allowed.includes(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Not allowed by CORS'), false);
+      }
+    },
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
+    credentials: true,
   });
 
   // ── Rate limiting ─────────────────────────────────────────────────────────
