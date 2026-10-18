@@ -11,6 +11,7 @@
 
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import { Config } from './config.js';
 import { healthRoutes } from './routes/health.js';
 import { analyzeRoutes } from './routes/analyze.js';
@@ -35,6 +36,13 @@ export function buildServer(config: Config) {
     origin: config.corsOrigin,
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
+  });
+
+  // ── Rate limiting ─────────────────────────────────────────────────────────
+  // Protect the public analyze endpoint from abuse.
+  void fastify.register(rateLimit, {
+    max: 10,
+    timeWindow: 60 * 1000, // 10 requests per minute per IP
   });
 
   // ── Error handler ─────────────────────────────────────────────────────────
