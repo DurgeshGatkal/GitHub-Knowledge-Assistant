@@ -87,11 +87,11 @@ export function buildServer(config: Config) {
       cache.get(owner, repo, sha),
   };
 
-  // ── Routes ────────────────────────────────────────────────────────────────
-  void fastify.register(healthRoutes);
-  void fastify.register(analyzeRoutes, { deps: analyzeDeps });
-  void fastify.register(jobsRoutes, { deps: jobsDeps });
-  void fastify.register(graphRoutes, { deps: graphDeps });
+  // ── Routes (all under /api) ───────────────────────────────────────────────
+  void fastify.register(healthRoutes, { prefix: '/api' });
+  void fastify.register(analyzeRoutes, { prefix: '/api', deps: analyzeDeps });
+  void fastify.register(jobsRoutes, { prefix: '/api', deps: jobsDeps });
+  void fastify.register(graphRoutes, { prefix: '/api', deps: graphDeps });
 
   return fastify;
 }

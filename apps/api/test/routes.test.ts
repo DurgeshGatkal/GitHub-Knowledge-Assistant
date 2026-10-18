@@ -33,7 +33,7 @@ function makeGraph(sha: string): GraphAnalysis {
 
 function buildApp(deps: AnalyzeDeps) {
   const app = Fastify({ logger: false });
-  void app.register(analyzeRoutes, { deps });
+  void app.register(analyzeRoutes, { prefix: '/api', deps });
   return app;
 }
 
@@ -48,7 +48,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: '' },
     });
     expect(res.statusCode).toBe(400);
@@ -65,7 +65,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: 'https://gitlab.com/owner/repo' },
     });
     expect(res.statusCode).toBe(400);
@@ -85,7 +85,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: `https://github.com/o/r/commit/${VALID_SHA}` },
     });
     expect(res.statusCode).toBe(200);
@@ -113,7 +113,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: 'https://github.com/o/r' },
     });
     expect(res.statusCode).toBe(202);
@@ -140,7 +140,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: `https://github.com/o/r/commit/${VALID_SHA}` },
     });
     expect(res.statusCode).toBe(202);
@@ -161,7 +161,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: 'https://github.com/nope/repo' },
     });
     expect(res.statusCode).toBe(404);
@@ -181,7 +181,7 @@ describe('POST /api/analyze', () => {
     });
     const res = await app.inject({
       method: 'POST',
-      url: '/analyze',
+      url: '/api/analyze',
       body: { url: 'https://github.com/o/r' },
     });
     expect(res.statusCode).toBe(429);
