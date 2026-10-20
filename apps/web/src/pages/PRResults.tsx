@@ -159,10 +159,18 @@ export function PRResults() {
     )
   }
 
-  const { impact } = pr
   const confirmed = pr.impact.affectedFiles.filter((f) => f.status === 'confirmed')
   const inferred = pr.impact.affectedFiles.filter((f) => f.status === 'inferred')
   const unverified = pr.impact.affectedFiles.filter((f) => f.status === 'unverified')
+
+  // Deleted files only exist in the base commit, so link those hops to the
+  // base SHA; everything else points at the head commit.
+  const deletedFiles = new Set(
+    pr.changedFiles.filter((f) => f.status === 'deleted').map((f) => f.filename)
+  )
+  const shaFor = (file: string) => (deletedFiles.has(file) ? pr.baseSha : pr.headSha)
+  const lineUrl = (file: string, line: number) =>
+    `https://github.com/${owner}/${repo}/blob/${shaFor(file)}/${file}#L${line}`
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -199,11 +207,13 @@ export function PRResults() {
 
       {/* Unverified count banner */}
       {pr.impact.stats.unresolvedLinkCount > 0 && (
-        <div className="bg-amber-50 border border-amber-200 px-6 py-3">
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-amber-700 font-medium">⚠️</span>
+            <span className="text-amber-700 font-medium">⚠</span>
             <span className="text-amber-800 text-sm">
-              {pr.impact.stats.unresolvedLinkCount} unresolved link(s) could not be resolved.
+              {pr.impact.stats.unresolvedLinkCount}{' '}
+              {pr.impact.stats.unresolvedLinkCount === 1 ? 'link' : 'links'} the tool could
+              not resolve — see “Unresolved links” below.
             </span>
           </div>
         </div>
@@ -213,40 +223,46 @@ export function PRResults() {
         {/* Changed files */}
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Changed Files</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-3 py-2">File</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">+ / -</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pr.changedFiles.map((f) => (
-                  <tr key={f.filename} className="border-b border-gray-100">
-                    <td className="px-3 py-2">{f.filename}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          f.status === 'added'
-                            ? 'bg-green-100 text-green-700'
-                            : f.status === 'modified'
-                            ? 'bg-blue-100 text-blue-700'
-                            : f.status === 'deleted'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-yellow-100 text-yellow-700'
-                        }`}
-                      >
-                        {f.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{f.additions} / {f.deletions}</td>
+          {pr.changedFiles.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              This pull request does not change any files.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="px-3 py-2">File</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">+ / -</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pr.changedFiles.map((f) => (
+                    <tr key={f.filename} className="border-b border-gray-100">
+                      <td className="px-3 py-2">{f.filename}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            f.status === 'added'
+                              ? 'bg-green-100 text-green-700'
+                              : f.status === 'modified'
+                              ? 'bg-blue-100 text-blue-700'
+                              : f.status === 'deleted'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-yellow-100 text-yellow-700'
+                          }`}
+                        >
+                          {f.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">{f.additions} / {f.deletions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Findings summary */}
@@ -265,6 +281,14 @@ export function PRResults() {
           </div>
         </div>
 
+        {/* Empty impact state */}
+        {pr.impact.affectedFiles.length === 0 && (
+          <div className="mb-6 bg-white border border-gray-200 rounded p-4 text-sm text-gray-600">
+            No other files import the code changed by this pull request, so there are
+            no affected files to list.
+          </div>
+        )}
+
         {/* Affected files by label */}
         {[
           { label: 'Confirmed', color: 'green', items: confirmed },
@@ -275,40 +299,62 @@ export function PRResults() {
             <h3 className="text-sm font-semibold text-gray-700 mb-2">
               {group.label} ({group.items.length})
             </h3>
-            <div className="space-y-2">
-              {group.items.map((f) => (
-                <div key={f.file} className="bg-white p-3 border border-gray-200 rounded">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-sm font-medium text-gray-900">{f.file}</span>
-                    <span className={`text-xs font-medium rounded-full ${
-                      f.status === 'confirmed'
-                        ? 'bg-green-100 text-green-700'
-                        : f.status === 'inferred'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {f.status}
-                    </span>
+            {group.items.length === 0 ? (
+              <p className="text-xs text-gray-400">None.</p>
+            ) : (
+              <div className="space-y-2">
+                {group.items.map((f) => (
+                  <div key={f.file} className="bg-white p-3 border border-gray-200 rounded">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-sm font-medium text-gray-900">{f.file}</span>
+                      <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${
+                        f.status === 'confirmed'
+                          ? 'bg-green-100 text-green-700'
+                          : f.status === 'inferred'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}>
+                        {f.status === 'confirmed' ? '✓ ' : f.status === 'inferred' ? '≈ ' : '? '}
+                        {f.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-600 mb-2">
+                      Depth: {f.depth} &nbsp;|&nbsp; Via: {f.viaChangedFiles.join(', ') || '—'}
+                    </div>
+                    <details className="mt-1" open={f.depth <= 1}>
+                      <summary className="text-xs text-gray-700 cursor-pointer select-none">
+                        Evidence chain ({f.chain.length} hop{f.chain.length === 1 ? '' : 's'})
+                      </summary>
+                      {f.chain.length === 0 ? (
+                        <p className="text-xs text-gray-400 pl-4 mt-1">
+                          This file is part of the diff itself.
+                        </p>
+                      ) : (
+                        <ol className="pl-4 mt-1 space-y-2">
+                          {f.chain.map((link, i) => (
+                            <li key={i} className="text-xs text-gray-700">
+                              <span className="text-gray-400">{i + 1}. </span>
+                              {link.from} → {link.to}{' '}
+                              <a
+                                href={lineUrl(link.to, link.importLine)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline"
+                              >
+                                line {link.importLine} ↗
+                              </a>
+                              <div className="text-gray-500 pl-4">
+                                {link.kind} · {link.specifier}
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </details>
                   </div>
-                  <div className="text-xs text-gray-600 mb-2">
-                    Depth: {f.depth} &nbsp;|&nbsp; Via: {f.viaChangedFiles.join(', ')}
-                  </div>
-                  <div className="text-xs text-gray-700 mb-2">
-                    Evidence Chain:
-                  </div>
-                  <div className="pl-4 space-y-1">
-                    {f.chain.map((link, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="text-xs text-gray-400">{i + 1}.</span>
-                        <span className="text-xs text-gray-700">
-                          {link.from} → {link.to} (line {link.importLine})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
 
@@ -316,7 +362,7 @@ export function PRResults() {
         {pr.impact.testMatches.length > 0 && (
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-3">
-              Tests That Import Affected Code
+              Tests that import affected code
             </h2>
             <div className="space-y-2">
               {pr.impact.testMatches.map((t) => (
@@ -358,6 +404,10 @@ export function PRResults() {
             </div>
           </div>
         )}
+
+        <p className="mt-8 text-center text-xs text-gray-400">
+          This tool only reads the repository; it never changes it.
+        </p>
       </div>
     </div>
   )
