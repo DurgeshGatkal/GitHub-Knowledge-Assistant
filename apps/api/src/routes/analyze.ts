@@ -51,6 +51,8 @@ export interface AnalyzeDeps {
     prTitle: string;
     prState: string;
   }) => Promise<{
+    owner: string;
+    repo: string;
     number: number;
     title: string;
     state: string;
@@ -236,6 +238,8 @@ export const analyzeRoutes: FastifyPluginAsync<{ deps: AnalyzeDeps }> = async (
           return reply.send({
             status: 'done',
             result: {
+              owner: parsed.owner,
+              repo: parsed.repo,
               number: parsed.number,
               title: prMeta.title,
               state: prMeta.state,

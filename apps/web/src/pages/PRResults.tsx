@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { analyze, pollJob } from '../api.js'
 
 interface PRChangedFile {
@@ -78,10 +78,18 @@ export function PRResults() {
     number: string
   }>()
   const navigate = useNavigate()
-  const [pr, setPr] = useState<PRResult | null>(null)
+  const location = useLocation()
+  // When coming from the job page the finished result is passed along, so the
+  // page renders immediately instead of analysing the PR a second time.
+  const initialResult =
+    (location.state as { result?: PRResult } | null)?.result ?? null
+  const [pr, setPr] = useState<PRResult | null>(initialResult)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // Already have a result from the job page.
+    if (initialResult) return
+
     if (!owner || !repo || !number) {
       setError('Missing repository information')
       return
@@ -120,7 +128,7 @@ export function PRResults() {
         setError(err instanceof Error ? err.message : 'Failed to load PR results')
       }
     })()
-  }, [owner, repo, number])
+  }, [owner, repo, number, initialResult])
 
   if (error) {
     return (

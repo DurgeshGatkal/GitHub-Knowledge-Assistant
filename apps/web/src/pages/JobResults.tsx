@@ -15,11 +15,20 @@ export function JobResults() {
   const { status, result, error } = usePolling(jobId ?? undefined, true)
 
   useEffect(() => {
-    if (status === 'done' && result) {
+    if (status !== 'done' || !result) return
+
+    // PR results carry an `impact`; repository results carry nodes/edges.
+    if (result.impact && result.number) {
       navigate(
-        `/repo/${encodeURIComponent(result.owner)}/${encodeURIComponent(result.repo)}/${encodeURIComponent(result.sha)}`
+        `/pr/${encodeURIComponent(result.owner)}/${encodeURIComponent(result.repo)}/${encodeURIComponent(result.number)}`,
+        { state: { result } }
       )
+      return
     }
+
+    navigate(
+      `/repo/${encodeURIComponent(result.owner)}/${encodeURIComponent(result.repo)}/${encodeURIComponent(result.sha)}`
+    )
   }, [status, result, navigate])
 
   return (

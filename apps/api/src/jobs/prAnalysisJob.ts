@@ -24,6 +24,10 @@ export interface PRAnalysisDeps {
 }
 
 export interface PRAnalysisResult {
+  /** Repository owner (needed by the web app to build PR links). */
+  owner: string;
+  /** Repository name. */
+  repo: string;
   /** Pull request number */
   number: number;
   /** Pull request title */
@@ -80,6 +84,8 @@ export function createPRAnalysisJobHandler(deps: PRAnalysisDeps) {
     });
 
     return {
+      owner,
+      repo,
       number: prNumber,
       title: prTitle,
       state: prState,
