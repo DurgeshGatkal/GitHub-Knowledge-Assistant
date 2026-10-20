@@ -226,6 +226,7 @@ describe('POST /api/analyze', () => {
       tick: async () => {},
       analyzeJob: async () => makeGraph(VALID_SHA),
       analyzePRJob: async () => impactResult,
+      analyzeImpact: () => impactResult.impact,
       cacheGet: async () => impactResult,
       resolveRef: async () => ({ sha: VALID_SHA, ref: VALID_SHA, fromSha: true }),
       fetchPRMetadata: async () => ({

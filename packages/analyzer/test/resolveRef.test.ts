@@ -37,16 +37,26 @@ describe('resolveRef', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('resolves default branch when no ref given', async () => {
-    const deps = makeDeps(async () => jsonResponse({ default_branch: 'main' }));
+  it('resolves the default branch to a commit SHA when no ref is given', async () => {
+    const sha = 'f'.repeat(40);
+    const deps = makeDeps(async (url) =>
+      url.endsWith('/repos/facebook/react')
+        ? jsonResponse({ default_branch: 'main' })
+        : jsonResponse({ sha })
+    );
     const result = await resolveRef('facebook', 'react', undefined, deps);
     if ('code' in result) throw new Error('expected result, got error: ' + JSON.stringify(result));
-    expect(result.sha).toBe('main');
+    // The branch name must never leak through as a SHA.
+    expect(result.sha).toBe(sha);
     expect(result.ref).toBe('main');
     expect(result.fromSha).toBe(false);
     expect(deps.fetch).toHaveBeenCalledWith(
       'https://api.github.com/repos/facebook/react',
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) })
+    );
+    expect(deps.fetch).toHaveBeenCalledWith(
+      'https://api.github.com/repos/facebook/react/commits/main',
+      expect.anything()
     );
   });
 

@@ -108,6 +108,8 @@ export function buildServer(config: Config) {
         kind?: 'repo' | 'pr';
         prNumber?: number;
         baseSha?: string;
+        prTitle?: string;
+        prState?: string;
         changedFiles?: Array<{
           filename: string;
           previous_filename?: string;
@@ -123,6 +125,7 @@ export function buildServer(config: Config) {
     analyzePRJob,
     cacheGet: (owner: string, repo: string, sha: string) =>
       cache.get(owner, repo, sha),
+    analyzeImpact,
     resolveRef: (owner: string, repo: string, ref: string | undefined) =>
       resolveRef(owner, repo, ref, {
         fetch,

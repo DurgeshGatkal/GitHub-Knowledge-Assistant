@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { analyze } from '../api.js'
+import { analyze, pollJob } from '../api.js'
 
 interface PRChangedFile {
   filename: string
@@ -102,31 +102,19 @@ export function PRResults() {
 
         if (started.status === 'done') {
           setPr(started.result as PRResult)
+        } else if (started.jobId) {
+          const job = await pollJob(started.jobId, {
+            intervalMs: 1500,
+            maxAttempts: 60,
+          })
+
+          if (job.status === 'done') {
+            setPr(job.result as PRResult)
+          } else if (job.status === 'failed') {
+            setError(job.error || 'PR analysis failed')
+          }
         } else {
-          // Poll until done
-          let attempts = 0
-          const maxAttempts = 60
-          while (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1500))
-            attempts++
-
-            const job = await fetch(
-              `/api/jobs/${started.jobId}`
-            ).then((res) => res.json())
-
-            if (job.status === 'done') {
-              setPr(job.result as PRResult)
-              break
-            }
-            if (job.status === 'failed') {
-              setError(job.error || 'PR analysis failed')
-              break
-            }
-          }
-
-          if (attempts >= maxAttempts) {
-            setError('PR analysis timed out')
-          }
+          setError('PR analysis did not return a job')
         }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to load PR results')

@@ -79,7 +79,11 @@ export async function resolveRef(
 
   const headers = githubHeaders(githubToken);
 
-  // ── No ref: use default branch ──
+  // ── No ref: look up the default branch name, then resolve it to a SHA ──
+  //
+  // The repo endpoint only returns a branch *name* ("main"). Everything
+  // downstream (tarball fetch, cache key, permalinks) needs a commit SHA, so
+  // the name is resolved through the commits endpoint below.
   if (!ref) {
     try {
       const res = await fetchFn(
@@ -99,13 +103,13 @@ export async function resolveRef(
       if (!data.default_branch) {
         return { code: 'EMPTY_REPO', message: 'Repository has no default branch.' };
       }
-      return { sha: data.default_branch, ref: data.default_branch, fromSha: false };
+      ref = data.default_branch;
     } catch {
       return { code: 'NETWORK_ERROR', message: 'Failed to reach GitHub API.' };
     }
   }
 
-  // ── Ref provided: try to resolve ──
+  // ── Resolve the branch/tag name to a commit SHA ──
   // Handle slash branches by trying progressively longer prefixes.
   const candidates = slashBranchCandidates(ref);
 

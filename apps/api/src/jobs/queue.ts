@@ -32,6 +32,10 @@ export interface JobRecord {
   prNumber?: number;
   /** Base SHA (only for 'pr' jobs). */
   baseSha?: string;
+  /** PR title (only for 'pr' jobs). */
+  prTitle?: string;
+  /** PR state, e.g. "open" / "closed" (only for 'pr' jobs). */
+  prState?: string;
   /** Changed files from the PR (only for 'pr' jobs). */
   changedFiles?: Array<{
     filename: string;
@@ -83,7 +87,14 @@ export function createJobQueue(options: JobQueueOptions = {}) {
     owner: string,
     repo: string,
     sha: string,
-    opts?: { kind?: JobKind; prNumber?: number; baseSha?: string; changedFiles?: JobRecord['changedFiles'] }
+    opts?: {
+      kind?: JobKind;
+      prNumber?: number;
+      baseSha?: string;
+      prTitle?: string;
+      prState?: string;
+      changedFiles?: JobRecord['changedFiles'];
+    }
   ): JobRecord {
     const now = Date.now();
     const id = `${owner}-${repo}-${sha}-${now}`;
@@ -96,6 +107,8 @@ export function createJobQueue(options: JobQueueOptions = {}) {
       kind: opts?.kind ?? 'repo',
       prNumber: opts?.prNumber,
       baseSha: opts?.baseSha,
+      prTitle: opts?.prTitle,
+      prState: opts?.prState,
       changedFiles: opts?.changedFiles,
       createdAt: now,
       updatedAt: now,

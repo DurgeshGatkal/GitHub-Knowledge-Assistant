@@ -44,7 +44,10 @@ let DirectedGraph: any;
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   const mod = require('graphology');
-  DirectedGraph = mod.DirectedGraph ?? mod;
+  // MultiDirectedGraph: a file can import the same target from several lines
+  // (e.g. `import './types.js'` + `export * from './types.js'`). A simple
+  // DirectedGraph rejects parallel edges, so use the multi variant.
+  DirectedGraph = mod.MultiDirectedGraph ?? mod.DirectedGraph ?? mod;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,9 +83,9 @@ export interface BuildGraphInput {
 export function buildGraph(input: BuildGraphInput): GraphAnalysis {
   const { owner, repo, sha, fileResults } = input;
 
-  // Use graphology's DirectedGraph with our typed attributes.
-  // MultiDirectedGraph would allow parallel edges but DirectedGraph is simpler
-  // and sufficient: we generate unique edge IDs ourselves for multi-edges.
+  // MultiDirectedGraph allows parallel edges: the same source file may import
+  // the same target from more than one line, and each import statement keeps
+  // its own edge (unique key "source::target::line").
   const graph = new DirectedGraph() as any;
 
   const unresolvedImports: UnresolvedImport[] = [];

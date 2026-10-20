@@ -16,6 +16,7 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^8.1.1",
     "@nicolo-ribaudo/chokidar-2": "^2.1.8-no-fsevents.3"
   }
 }

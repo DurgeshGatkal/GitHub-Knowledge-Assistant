@@ -6,6 +6,10 @@ dist/
 build/
 coverage/
 
+# Local cache/database files
+apps/api/data/
+*.db
+
 # Temporary and log files
 *.log
 vitest_out.txt

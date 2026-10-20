@@ -18,6 +18,8 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeLocal } from '../src/pipeline.js';
+import { buildGraph } from '../src/graph/graphBuilder.js';
+import type { ResolvedImport } from '../src/resolver/resolver.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'fixtures');
@@ -222,5 +224,56 @@ describe('buildGraph — fixture-circular', () => {
 
     // All imports are .js → .ts resolvable; none should be unresolved
     expect(analysis.unresolvedImports.length).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression: same file imported twice from the same source
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildGraph — parallel edges', () => {
+  it('keeps one edge per import statement when the same target is imported twice', () => {
+    const makeResolved = (
+      line: number,
+      kind: ResolvedImport['original']['kind']
+    ): ResolvedImport => ({
+      original: { specifier: './types', line, kind },
+      resolvedAbsPath: '/repo/source/types.ts',
+      resolvedRelPath: 'source/types.ts',
+      resolutionMethod: 'relative',
+      isExternal: false,
+    });
+
+    const analysis = buildGraph({
+      owner: 'o',
+      repo: 'r',
+      sha: 'a'.repeat(40),
+      fileResults: [
+        {
+          file: {
+            relativePath: 'source/index.ts',
+            absolutePath: '/repo/source/index.ts',
+            sizeBytes: 10,
+          },
+          resolvedImports: [makeResolved(1, 'static'), makeResolved(2, 'reexport')],
+          parseError: false,
+        },
+        {
+          file: {
+            relativePath: 'source/types.ts',
+            absolutePath: '/repo/source/types.ts',
+            sizeBytes: 10,
+          },
+          resolvedImports: [],
+          parseError: false,
+        },
+      ],
+    });
+
+    // Both import statements must survive (this used to throw inside graphology
+    // because a simple DirectedGraph rejects parallel edges).
+    expect(analysis.edges).toHaveLength(2);
+    expect(analysis.stats.totalEdges).toBe(2);
+    expect(analysis.edges.map((e) => e.attributes.importLine).sort()).toEqual([1, 2]);
   });
 });

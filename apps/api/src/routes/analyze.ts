@@ -14,6 +14,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { GraphAnalysis, ImpactAnalysis, PRChangedFile } from '@repo/analyzer';
 import {
   parseGithubUrl,
+  type analyzeImpact,
   type ParsedRepoUrl,
   type ParsedCommitUrl,
   type ParsedPullUrl,
@@ -30,6 +31,8 @@ export interface AnalyzeDeps {
       kind?: 'repo' | 'pr';
       prNumber?: number;
       baseSha?: string;
+      prTitle?: string;
+      prState?: string;
       changedFiles?: PRChangedFile[];
     }
   ) => { id: string; status: string };
@@ -58,6 +61,8 @@ export interface AnalyzeDeps {
   }>;
   /** Cache read for instant hits. */
   cacheGet: (owner: string, repo: string, sha: string) => Promise<GraphAnalysis | null>;
+  /** Impact analysis over a cached head graph (used for PR cache hits). */
+  analyzeImpact: typeof analyzeImpact;
   /** GitHub helpers (injected so tests stay offline). */
   resolveRef: (
     owner: string,
@@ -221,10 +226,26 @@ export const analyzeRoutes: FastifyPluginAsync<{ deps: AnalyzeDeps }> = async (
         const headSha = prMeta.head_sha;
         const baseSha = prMeta.base_sha;
 
-        // ── Cache hit → return immediately ─────────────────────────────────
+        // ── Cache hit → build the PR result from the cached head graph ─────
         const cached = await deps.cacheGet(parsed.owner, parsed.repo, headSha);
         if (cached) {
-          return reply.send({ status: 'done', result: cached, cached: true });
+          const impact = deps.analyzeImpact(cached, {
+            changedFiles: prFiles.map((f) => f.filename),
+            depthLimit: 3,
+          });
+          return reply.send({
+            status: 'done',
+            result: {
+              number: parsed.number,
+              title: prMeta.title,
+              state: prMeta.state,
+              headSha,
+              baseSha,
+              changedFiles: prFiles,
+              impact,
+            },
+            cached: true,
+          });
         }
 
         // ── Cache miss → enqueue a PR job ───────────────────────────────────
@@ -232,6 +253,8 @@ export const analyzeRoutes: FastifyPluginAsync<{ deps: AnalyzeDeps }> = async (
           kind: 'pr',
           prNumber: parsed.number,
           baseSha,
+          prTitle: prMeta.title,
+          prState: prMeta.state,
           changedFiles: prFiles,
         });
         await deps.tick();
