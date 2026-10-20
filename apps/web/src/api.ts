@@ -1,10 +1,11 @@
 /**
  * src/api.ts — HTTP client for the backend API.
  *
- * All calls go to /api (proxied by Vite in dev, same origin in production).
+ * Calls the API server directly at http://localhost:8787/api (in dev)
+ * or same origin (in production, served by Fastify).
  */
 
-const API_BASE = '/api'
+const API_BASE = 'http://localhost:8787/api'
 
 async function apiFetch(path: string, init?: RequestInit): Promise<any> {
   const res = await fetch(`${API_BASE}${path}`, {
