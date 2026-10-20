@@ -7,8 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { usePolling } from '../hooks/usePolling.js'
-import { getGraph, analyze } from '../api.js'
+import { getGraph, analyze, pollJob } from '../api.js'
 import { GraphView } from '../components/GraphView.js'
 
 export function RepoResults() {
@@ -16,11 +15,6 @@ export function RepoResults() {
   const navigate = useNavigate()
   const [graph, setGraph] = useState<any>(null)
   const [error, setError] = useState('')
-
-  const { status, result } = usePolling(
-    owner && repo && sha ? `repo-${owner}-${repo}-${sha}` : undefined,
-    Boolean(owner && repo && sha)
-  )
 
   useEffect(() => {
     if (!owner || !repo || !sha) {
@@ -30,27 +24,37 @@ export function RepoResults() {
 
     ;(async () => {
       try {
+        // Fast path: the graph is already cached for this commit.
         const cached = await getGraph(owner, repo, sha)
         setGraph(cached)
+        return
       } catch {
-        // Graph not cached yet — start a new analysis
-        try {
-          const started = await analyze(`https://github.com/${owner}/${repo}@${sha}`)
-          if (started.status === 'done') {
-            setGraph(started.result)
-          }
-        } catch (err: unknown) {
-          setError(err instanceof Error ? err.message : 'Failed to load graph')
+        // Not cached (e.g. a direct link was opened) — analyse the commit.
+      }
+
+      try {
+        const started = await analyze(
+          `https://github.com/${owner}/${repo}/commit/${sha}`
+        )
+        if (started.status === 'done') {
+          setGraph(started.result)
+          return
         }
+        if (!started.jobId) {
+          setError('Analysis did not return a job')
+          return
+        }
+        const job = await pollJob(started.jobId)
+        if (job.status === 'done') {
+          setGraph(job.result)
+        } else {
+          setError(job.error ?? 'Analysis failed')
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load graph')
       }
     })()
   }, [owner, repo, sha])
-
-  useEffect(() => {
-    if (result && status === 'done') {
-      setGraph(result)
-    }
-  }, [result, status])
 
   if (error) {
     return (
