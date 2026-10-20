@@ -11,24 +11,42 @@
  */
 
 import type { GraphAnalysis } from '@repo/analyzer';
+import type { ImpactAnalysis } from '@repo/analyzer';
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+export type JobKind = 'repo' | 'pr';
 
 export interface JobRecord {
   /** Unique job id returned to the caller. */
   id: string;
   /** Current lifecycle state. */
   status: JobStatus;
+  /** Job kind: 'repo' for repository analysis, 'pr' for pull request analysis. */
+  kind: JobKind;
   /** Repository being analysed. */
   owner: string;
   repo: string;
+  /** SHA being analysed (for 'pr' jobs, this is the head SHA). */
   sha: string;
+  /** PR number (only for 'pr' jobs). */
+  prNumber?: number;
+  /** Base SHA (only for 'pr' jobs). */
+  baseSha?: string;
+  /** Changed files from the PR (only for 'pr' jobs). */
+  changedFiles?: Array<{
+    filename: string;
+    previous_filename?: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+  }>;
   /** Unix ms the job was created. */
   createdAt: number;
   /** Unix ms the job last changed state. */
   updatedAt: number;
   /** Populated when status === 'done'. */
-  result?: GraphAnalysis;
+  result?: GraphAnalysis | ImpactAnalysis | any;
   /** Populated when status === 'failed'. */
   error?: string;
 }
@@ -46,13 +64,13 @@ export function createJobQueue(options: JobQueueOptions = {}) {
   const concurrency = options.concurrency ?? 1;
   const jobs = new Map<string, JobRecord>();
   const running = new Set<string>();
-  let processor: ((job: JobRecord) => Promise<GraphAnalysis>) | null = null;
+  let processor: ((job: JobRecord) => Promise<any>) | null = null;
 
   /**
    * Register the analysis handler. Called once at server startup.
    */
   function setProcessor(
-    handler: (job: JobRecord) => Promise<GraphAnalysis>
+    handler: (job: JobRecord) => Promise<any>
   ): void {
     processor = handler;
   }
@@ -61,7 +79,12 @@ export function createJobQueue(options: JobQueueOptions = {}) {
    * Create a job in the 'queued' state and return its record.
    * Processing is triggered externally via `tick()`.
    */
-  function enqueue(owner: string, repo: string, sha: string): JobRecord {
+  function enqueue(
+    owner: string,
+    repo: string,
+    sha: string,
+    opts?: { kind?: JobKind; prNumber?: number; baseSha?: string; changedFiles?: JobRecord['changedFiles'] }
+  ): JobRecord {
     const now = Date.now();
     const id = `${owner}-${repo}-${sha}-${now}`;
     const job: JobRecord = {
@@ -70,6 +93,10 @@ export function createJobQueue(options: JobQueueOptions = {}) {
       owner,
       repo,
       sha,
+      kind: opts?.kind ?? 'repo',
+      prNumber: opts?.prNumber,
+      baseSha: opts?.baseSha,
+      changedFiles: opts?.changedFiles,
       createdAt: now,
       updatedAt: now,
     };

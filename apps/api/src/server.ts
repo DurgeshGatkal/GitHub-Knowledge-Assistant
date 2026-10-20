@@ -3,7 +3,7 @@
  *
  * Builds and configures the Fastify instance with CORS, JSON parsing, error
  * handling and all route plugins. Wires the cache, job queue and analysis
- * handler together, then injects them into each route plugin via options.
+ * handlers together, then injects them into each route plugin via options.
  *
  * Exported (not auto-started) so vitest can create an in-memory server via
  * `server.inject()` — no open port, no network.
@@ -20,8 +20,14 @@ import { graphRoutes } from './routes/graph.js';
 import { SqliteGraphCache } from './cache/graphCache.js';
 import { createJobQueue } from './jobs/queue.js';
 import { createAnalysisJobHandler } from './jobs/analysisJob.js';
-import { analyzeRemote } from '@repo/analyzer';
-import { resolveRef } from '@repo/analyzer';
+import { createPRAnalysisJobHandler } from './jobs/prAnalysisJob.js';
+import {
+  analyzeRemote,
+  analyzeImpact,
+  resolveRef,
+  fetchPRMetadata,
+  fetchPRChangedFiles,
+} from '@repo/analyzer';
 
 export function buildServer(config: Config) {
   const fastify = Fastify({
@@ -70,21 +76,65 @@ export function buildServer(config: Config) {
   // ── Dependencies ──────────────────────────────────────────────────────────
   const cache = new SqliteGraphCache(config.dbPath);
   const queue = createJobQueue({ concurrency: 1 });
+
+  // Repository analysis handler
   const analyzeJob = createAnalysisJobHandler({
     analyzeRemote,
     cache,
   });
-  queue.setProcessor(analyzeJob);
+
+  // PR analysis handler
+  const analyzePRJob = createPRAnalysisJobHandler({
+    analyzeRemote,
+    analyzeImpact,
+  });
+
+  // Combined processor: dispatches based on job.kind
+  const processJob = async (job: any): Promise<any> => {
+    if (job.kind === 'pr') {
+      return analyzePRJob(job);
+    }
+    return analyzeJob(job);
+  };
+
+  queue.setProcessor(processJob);
 
   const analyzeDeps = {
-    enqueue: (owner: string, repo: string, sha: string) =>
-      queue.enqueue(owner, repo, sha),
+    enqueue: (
+      owner: string,
+      repo: string,
+      sha: string,
+      opts?: {
+        kind?: 'repo' | 'pr';
+        prNumber?: number;
+        baseSha?: string;
+        changedFiles?: Array<{
+          filename: string;
+          previous_filename?: string;
+          status: string;
+          additions: number;
+          deletions: number;
+          changes: number;
+        }>;
+      }
+    ) => queue.enqueue(owner, repo, sha, opts),
     tick: () => queue.tick(),
     analyzeJob,
+    analyzePRJob,
     cacheGet: (owner: string, repo: string, sha: string) =>
       cache.get(owner, repo, sha),
     resolveRef: (owner: string, repo: string, ref: string | undefined) =>
       resolveRef(owner, repo, ref, {
+        fetch,
+        githubToken: config.githubToken,
+      }),
+    fetchPRMetadata: (owner: string, repo: string, number: number) =>
+      fetchPRMetadata(owner, repo, number, {
+        fetch,
+        githubToken: config.githubToken,
+      }),
+    fetchPRChangedFiles: (owner: string, repo: string, number: number) =>
+      fetchPRChangedFiles(owner, repo, number, {
         fetch,
         githubToken: config.githubToken,
       }),

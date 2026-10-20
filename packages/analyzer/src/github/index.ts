@@ -21,3 +21,12 @@ export {
   type RefErrorCode,
   type ResolveRefResultOrError,
 } from './resolveRef.js';
+
+export {
+  fetchPRMetadata,
+  fetchPRChangedFiles,
+  type PRMetadata,
+  type PRChangedFile,
+  type PRFileStatus,
+  type PRFetchDeps,
+} from './pr.js';

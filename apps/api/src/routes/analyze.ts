@@ -5,13 +5,13 @@
  *   Body: { url: "https://github.com/owner/repo" }
  *   The URL can point to a repo, a branch/tag, a commit SHA, or a pull request.
  *
- * Response (cache hit):   { status: 'done',  result: GraphAnalysis, cached: true }
+ * Response (cache hit):   { status: 'done',  result: GraphAnalysis | PRAnalysisResult, cached: true }
  * Response (cache miss):  { status: 'queued', jobId: string, cached: false }
  * Response (error):       400 / 404 / 429 / 500 JSON with { error: { code, message } }
  */
 
 import type { FastifyPluginAsync } from 'fastify';
-import type { GraphAnalysis } from '@repo/analyzer';
+import type { GraphAnalysis, ImpactAnalysis, PRChangedFile } from '@repo/analyzer';
 import {
   parseGithubUrl,
   type ParsedRepoUrl,
@@ -22,11 +22,40 @@ import {
 
 export interface AnalyzeDeps {
   /** Enqueue a job and return its record. */
-  enqueue: (owner: string, repo: string, sha: string) => { id: string; status: string };
+  enqueue: (
+    owner: string,
+    repo: string,
+    sha: string,
+    opts?: {
+      kind?: 'repo' | 'pr';
+      prNumber?: number;
+      baseSha?: string;
+      changedFiles?: PRChangedFile[];
+    }
+  ) => { id: string; status: string };
   /** Kick off processing of queued jobs. */
   tick: () => Promise<void>;
   /** Run the analysis + cache it (mocked in tests). */
   analyzeJob: (job: { owner: string; repo: string; sha: string }) => Promise<GraphAnalysis>;
+  /** Run PR analysis + cache it (mocked in tests). */
+  analyzePRJob: (job: {
+    owner: string;
+    repo: string;
+    sha: string;
+    prNumber: number;
+    baseSha: string;
+    changedFiles: PRChangedFile[];
+    prTitle: string;
+    prState: string;
+  }) => Promise<{
+    number: number;
+    title: string;
+    state: string;
+    headSha: string;
+    baseSha: string;
+    changedFiles: PRChangedFile[];
+    impact: ImpactAnalysis;
+  }>;
   /** Cache read for instant hits. */
   cacheGet: (owner: string, repo: string, sha: string) => Promise<GraphAnalysis | null>;
   /** GitHub helpers (injected so tests stay offline). */
@@ -36,6 +65,32 @@ export interface AnalyzeDeps {
     ref: string | undefined,
     deps: { fetch: typeof fetch; githubToken?: string }
   ) => Promise<{ sha: string; ref: string; fromSha: boolean } | { code: string; message: string }>;
+  /** Fetch PR metadata (mocked in tests). */
+  fetchPRMetadata: (
+    owner: string,
+    repo: string,
+    number: number,
+    deps: { fetch: typeof fetch; githubToken?: string }
+  ) => Promise<
+    | {
+        number: number;
+        title: string;
+        state: string;
+        head_sha: string;
+        base_sha: string;
+        head_repo_full_name: string;
+        base_repo_full_name: string;
+        head_repo_is_fork: boolean;
+      }
+      | { code: string; message: string }
+    >;
+  /** Fetch PR changed files (mocked in tests). */
+  fetchPRChangedFiles: (
+    owner: string,
+    repo: string,
+    number: number,
+    deps: { fetch: typeof fetch; githubToken?: string }
+  ) => Promise<PRChangedFile[] | { code: string; message: string }>;
   /** GitHub token for API calls. */
   githubToken?: string;
 }
@@ -75,14 +130,30 @@ export const analyzeRoutes: FastifyPluginAsync<{ deps: AnalyzeDeps }> = async (
         });
       }
 
-      // ── Step 2: Resolve ref → SHA ─────────────────────────────────────────
-      let sha: string;
-      let resolvedRef: string;
-
+      // ── Step 2: Handle based on URL kind ──────────────────────────────────
       if (parsed.kind === 'commit') {
-        sha = parsed.sha;
-        resolvedRef = parsed.sha;
-      } else if (parsed.kind === 'repo') {
+        // ── Commit URL: use SHA directly ────────────────────────────────────
+        const sha = parsed.sha;
+
+        // ── Cache hit → return immediately ─────────────────────────────────
+        const cached = await deps.cacheGet(parsed.owner, parsed.repo, sha);
+        if (cached) {
+          return reply.send({ status: 'done', result: cached, cached: true });
+        }
+
+        // ── Cache miss → enqueue a job ──────────────────────────────────────
+        const job = deps.enqueue(parsed.owner, parsed.repo, sha);
+        await deps.tick();
+
+        return reply.status(202).send({
+          status: 'queued',
+          jobId: job.id,
+          cached: false,
+        });
+      }
+
+      if (parsed.kind === 'repo') {
+        // ── Repository URL: resolve ref → SHA ───────────────────────────────
         const resolved = await deps.resolveRef(
           parsed.owner,
           parsed.repo,
@@ -96,34 +167,81 @@ export const analyzeRoutes: FastifyPluginAsync<{ deps: AnalyzeDeps }> = async (
             error: { code: resolved.code, message: resolved.message },
           });
         }
-        sha = resolved.sha;
-        resolvedRef = resolved.ref;
-      } else {
-        // Pull request — PR flow is handled separately (Day 11).
-        // For now, reject with a clear message.
-        return reply.status(400).send({
-          error: {
-            code: 'UNSUPPORTED_PAGE',
-            message: 'Pull request URLs are not yet supported. Use a repository URL.',
-          },
+
+        const sha = resolved.sha;
+
+        // ── Cache hit → return immediately ─────────────────────────────────
+        const cached = await deps.cacheGet(parsed.owner, parsed.repo, sha);
+        if (cached) {
+          return reply.send({ status: 'done', result: cached, cached: true });
+        }
+
+        // ── Cache miss → enqueue a job ──────────────────────────────────────
+        const job = deps.enqueue(parsed.owner, parsed.repo, sha);
+        await deps.tick();
+
+        return reply.status(202).send({
+          status: 'queued',
+          jobId: job.id,
+          cached: false,
         });
       }
 
-      // ── Step 3: Cache hit → return immediately ────────────────────────────
-      const cached = await deps.cacheGet(parsed.owner, parsed.repo, sha);
-      if (cached) {
-        return reply.send({ status: 'done', result: cached, cached: true });
+      if (parsed.kind === 'pull') {
+        // ── Pull Request URL: fetch metadata + changed files ────────────────
+        const prMeta = await deps.fetchPRMetadata(
+          parsed.owner,
+          parsed.repo,
+          parsed.number,
+          { fetch, githubToken: deps.githubToken }
+        );
+        if ('code' in prMeta) {
+          let statusCode = 404;
+          if (prMeta.code === 'GITHUB_RATE_LIMITED') statusCode = 429;
+          return reply.status(statusCode).send({
+            error: { code: prMeta.code, message: prMeta.message },
+          });
+        }
+
+        const prFiles = await deps.fetchPRChangedFiles(
+          parsed.owner,
+          parsed.repo,
+          parsed.number,
+          { fetch, githubToken: deps.githubToken }
+        );
+        if ('code' in prFiles) {
+          let statusCode = 404;
+          if (prFiles.code === 'GITHUB_RATE_LIMITED') statusCode = 429;
+          if (prFiles.code === 'PR_TOO_LARGE') statusCode = 413;
+          return reply.status(statusCode).send({
+            error: { code: prFiles.code, message: prFiles.message },
+          });
+        }
+
+        const headSha = prMeta.head_sha;
+        const baseSha = prMeta.base_sha;
+
+        // ── Cache hit → return immediately ─────────────────────────────────
+        const cached = await deps.cacheGet(parsed.owner, parsed.repo, headSha);
+        if (cached) {
+          return reply.send({ status: 'done', result: cached, cached: true });
+        }
+
+        // ── Cache miss → enqueue a PR job ───────────────────────────────────
+        const job = deps.enqueue(parsed.owner, parsed.repo, headSha, {
+          kind: 'pr',
+          prNumber: parsed.number,
+          baseSha,
+          changedFiles: prFiles,
+        });
+        await deps.tick();
+
+        return reply.status(202).send({
+          status: 'queued',
+          jobId: job.id,
+          cached: false,
+        });
       }
-
-      // ── Step 4: Cache miss → enqueue a job ────────────────────────────────
-      const job = deps.enqueue(parsed.owner, parsed.repo, sha);
-      await deps.tick(); // starts the background processor (fire-and-forget)
-
-      return reply.status(202).send({
-        status: 'queued',
-        jobId: job.id,
-        cached: false,
-      });
     }
   );
 };
