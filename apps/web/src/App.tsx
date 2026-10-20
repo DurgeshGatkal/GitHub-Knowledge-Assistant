@@ -10,6 +10,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Landing } from './pages/Landing'
 import { RepoResults } from './pages/RepoResults'
+import { PRResults } from './pages/PRResults'
 import { JobResults } from './pages/JobResults'
 
 export function App() {
@@ -18,6 +19,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/repo/:owner/:repo/:sha" element={<RepoResults />} />
+        <Route path="/pr/:owner/:repo/:number" element={<PRResults />} />
         <Route path="/job/:jobId" element={<JobResults />} />
         <Route path="*" element={<Landing />} />
       </Routes>
